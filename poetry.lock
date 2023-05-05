@@ -481,4 +481,4 @@ reference = "pytorch-index"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "fece05037d44d7453771b48d84e9ab924f5e18749d1c75fbc89443f39947de29"
+content-hash = "568642db400c08bc5f881d9f2ac4ef99a7e06d31825a474e642ddcb34474ab41"
