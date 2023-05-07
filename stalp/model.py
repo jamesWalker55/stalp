@@ -129,7 +129,7 @@ class STALPNet(nn.Module):
         # this is the output, limited by tanh to (-1, 1)
         self.conv4 = nn.Sequential(
             ConvLayer(32, 3, 7, 1),
-            nn.Tanh(),
+            # nn.Tanh(),
         )
 
     def forward(self, x):

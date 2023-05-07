@@ -6,7 +6,7 @@ import torchvision
 
 
 class VGGPerceptualLoss(torch.nn.Module):
-    def __init__(self, resize=True):
+    def __init__(self):
         super(VGGPerceptualLoss, self).__init__()
         features = torchvision.models.vgg16(pretrained=True).features
         blocks = []
@@ -19,7 +19,6 @@ class VGGPerceptualLoss(torch.nn.Module):
                 p.requires_grad = False
         self.blocks = torch.nn.ModuleList(blocks)
         self.transform = torch.nn.functional.interpolate
-        self.resize = resize
         self.register_buffer(
             "mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
         )
@@ -27,31 +26,40 @@ class VGGPerceptualLoss(torch.nn.Module):
             "std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
         )
 
-    def forward(self, input, target, feature_layers=[0, 1, 2, 3], style_layers=[]):
-        if input.shape[1] != 3:
-            input = input.repeat(1, 3, 1, 1)
-            target = target.repeat(1, 3, 1, 1)
-        input = (input - self.mean) / self.std
-        target = (target - self.mean) / self.std
-        if self.resize:
-            input = self.transform(
-                input, mode="bilinear", size=(224, 224), align_corners=False
+    def forward(self, x, y, feature_layers=[], style_layers=[0, 1, 2, 3]):
+        if x.shape != y.shape:
+            raise ValueError(
+                f"Input and target have different shapes: {x.shape} != {y.shape}"
             )
-            target = self.transform(
-                target, mode="bilinear", size=(224, 224), align_corners=False
-            )
+
+        total_pixels = x.shape[-2] * x.shape[-1]
+
+        if x.shape[1] != 3:
+            x = x.repeat(1, 3, 1, 1)
+        if y.shape[1] != 3:
+            y = y.repeat(1, 3, 1, 1)
+
+        x = (x - self.mean) / self.std
+        y = (y - self.mean) / self.std
+
         loss = 0.0
-        x = input
-        y = target
         for i, block in enumerate(self.blocks):
             x = block(x)
             y = block(y)
+            # "All layers used for Gram matrix computation are post-activated with ReLU to better incorporate non-linearity"
+            x = torch.nn.functional.relu(x)
+            y = torch.nn.functional.relu(y)
             if i in feature_layers:
-                loss += torch.nn.functional.l1_loss(x, y)
+                loss += torch.nn.functional.mse_loss(x, y) ** 2
             if i in style_layers:
                 act_x = x.reshape(x.shape[0], x.shape[1], -1)
                 act_y = y.reshape(y.shape[0], y.shape[1], -1)
                 gram_x = act_x @ act_x.permute(0, 2, 1)
                 gram_y = act_y @ act_y.permute(0, 2, 1)
-                loss += torch.nn.functional.l1_loss(gram_x, gram_y)
-        return loss
+                loss += torch.nn.functional.mse_loss(gram_x, gram_y) ** 2
+
+        # the larger the image, the larger the loss
+        # normalise it by dividing by the number of pixels
+        # this normalisation isn't perfect, loss goes down with higher resolutions
+        # but it's good enough
+        return loss / total_pixels
